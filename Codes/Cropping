@@ -1,0 +1,125 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Tue Jun 27 11:57:49 2023
+
+@author: 23176467
+"""
+
+import os
+import cv2
+import numpy as np
+from scipy.spatial.distance import euclidean
+
+
+def get_bounding_box(mask):
+    x, y = np.where(mask == 255)  # Dapatkan koordinat pixel dengan nilai 255
+    if len(x) == 0 or len(y) == 0:
+        return None
+    else:
+        xmin, xmax = np.min(x), np.max(x)  # Dapatkan nilai minimal dan maksimal dari koordinat x dan y
+        ymin, ymax = np.min(y), np.max(y)
+        return xmin, ymin, xmax, ymax
+
+# Fungsi untuk melakukan cropping pada citra uji dengan padding
+def crop_with_padding(image, xmin, ymin, xmax, ymax, padding):
+    xmin_padded = max(0, xmin - padding)
+    ymin_padded = max(0, ymin - padding)
+    xmax_padded = min(image.shape[1] - 1, xmax + padding)
+    ymax_padded = min(image.shape[0] - 1, ymax + padding)
+    crop_tes = image[ymin_padded:ymax_padded, xmin_padded:xmax_padded]
+    return crop_tes
+
+# Directory gambar template dan citra uji
+template_dir = "path/to/templates"
+test_image_dir = "path/to/test_images"
+
+# Inisialisasi objek detektor dan matcher
+detector = cv2.SIFT_create()
+matcher = cv2.BFMatcher()
+
+# Loop melalui semua gambar template
+for template_file in os.listdir(template_dir):
+    template_path = os.path.join(template_dir, template_file)
+    if not os.path.isfile(template_path):
+        continue
+    
+    # Baca gambar template
+    template_image = cv2.imread(template_path, cv2.IMREAD_GRAYSCALE)
+    
+    # Temukan titik-titik kunci dan deskripsi fitur pada template
+    keypoints_template, descriptors_template = detector.detectAndCompute(template_image, None)
+    
+    # Loop melalui semua citra uji
+    for test_file in os.listdir(test_image_dir):
+        test_path = os.path.join(test_image_dir, test_file)
+        if not os.path.isfile(test_path):
+            continue
+        
+        # Baca citra uji
+        test_image = cv2.imread(test_path, cv2.IMREAD_GRAYSCALE)
+        
+        # Temukan titik-titik kunci dan deskripsi fitur pada citra uji
+        keypoints_test, descriptors_test = detector.detectAndCompute(test_image, None)
+        
+        # Melakukan pencocokan fitur antara template dan citra uji
+        matches = matcher.knnMatch(descriptors_template, descriptors_test, k=2)
+        
+        # Memfilter kecocokan berdasarkan nilai ambang (threshold) Lower
+        good_matches = []
+        for m, n in matches:
+            if m.distance < 0.7 * n.distance:
+                good_matches.append(m)
+        
+        # Cek jika terdapat kecocokan yang memenuhi ambang batas
+        if len(good_matches) > 0:
+            # Menyimpan nama gambar template dan citra uji yang cocok
+            template_name = os.path.splitext(template_file)[0]
+            test_name = os.path.splitext(test_file)[0]
+            
+            # Menampilkan jumlah kecocokan yang ditemukan
+            print(f"Jumlah kecocokan dengan template {template_name} pada citra uji {test_name}: {len(good_matches)}")
+            
+            # Mencari mask untuk gambar template
+            template_mask_path = os.path.join(template_dir, template_name + "_mask.png")
+            if not os.path.isfile(template_mask_path):
+                continue
+            
+            # Baca mask gambar template
+            template_mask = cv2.imread(template_mask_path, cv2.IMREAD_GRAYSCALE)
+            
+            # Dapatkan bounding box dari mask template
+            xmin, ymin, xmax, ymax = get_bounding_box(template_mask)
+            
+            # Lakukan cropping pada citra uji dengan menggunakan bounding box mask template dan padding
+            padding = 2
+            crop_tes = crop_with_padding(test_image, xmin, ymin, xmax, ymax, padding)
+            
+            # Simpan hasil cropping sebagai gambar
+            output_folder = "path/to/output_folder"
+            output_path = os.path.join(output_folder, f"crop_{template_name}_{test_name}.png")
+            cv2.imwrite(output_path, crop_tes)
+            
+            # Langkah 1: Dapatkan mask pada image training yang cocok
+            good_matches_masks = []
+            for m in good_matches:
+                template_point = keypoints_template[m.queryIdx].pt
+                test_point = keypoints_test[m.trainIdx].pt
+                template_index = closest_point_index  # Gunakan indeks image training yang paling cocok
+                template_mask = cropped_mask[template_index]
+                good_matches_masks.append(template_mask)
+
+            # Langkah 2: Gabungkan semua mask cocok menjadi satu mask prediktif
+            predictive_mask = np.zeros_like(test_image)
+            for mask in good_matches_masks:
+                predictive_mask = np.maximum(predictive_mask, mask)
+
+            # Langkah 3: Dapatkan bounding box dari mask prediktif
+            xmin, ymin, xmax, ymax = get_bounding_box(predictive_mask)
+
+            # Langkah 4: Pemotongan (cropping) pada image test dengan menggunakan bounding box
+            crop_tes = test_image[ymin:ymax, xmin:xmax]
+
+            # Simpan hasil cropping sebagai gambar
+            output_folder = "path/to/output_folder"
+            output_path = os.path.join(output_folder, f"crop_{template_name}_{test_name}_predictive_mask.png")
+            cv2.imwrite(output_path, crop_tes)
