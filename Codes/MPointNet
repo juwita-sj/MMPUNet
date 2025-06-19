@@ -66,10 +66,6 @@ def combine_attention(x):
     
   
     
-    combined = Conv2D(128, kernel_size=3, padding='same')(combined) 
-    combined = BatchNormalization()(combined)
-    combined = LeakyReLU(alpha=0.02)(combined)
-    
     combined = Conv2D(1, kernel_size=1, padding='same', activation='sigmoid')(combined) 
   
     
