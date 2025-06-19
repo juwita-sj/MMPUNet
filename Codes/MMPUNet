@@ -64,14 +64,7 @@ def combine_attention(x):
     
     combined = Concatenate()([f_act, f_a])
       
-    combined = Conv2D(24, kernel_size=7, padding='same')(combined) # ubah juga dari 48 ke 48 
-    combined = BatchNormalization()(combined)
-    combined = Activation('relu')(combined)
    
-    combined = Conv2D(48, kernel_size=5, padding='same')(combined) # ubah juga dari 48 ke 48 
-    combined = BatchNormalization()(combined)
-    combined = Activation('relu')(combined)
-             
     combined = Conv2D(128, kernel_size=3, padding='same')(combined) # ubah juga dari 48 ke 48 
     combined = BatchNormalization()(combined)
     combined = LeakyReLU(alpha=0.02)(combined)
@@ -80,9 +73,6 @@ def combine_attention(x):
     combined = Multiply()([x, combined])
     
   
-    combined = Conv2D(128, kernel_size=1, padding='same')(combined) 
-    combined = BatchNormalization()(combined)
-    combined = Activation('relu')(combined)
     
     return combined
 
