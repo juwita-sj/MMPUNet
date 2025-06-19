@@ -64,10 +64,7 @@ def combine_attention(x):
     combined =  (f_a)
     
     
-    combined = Conv2D(48, kernel_size=5, padding='same')(combined) 
-    combined = BatchNormalization()(combined)
-    combined = Activation('relu')(combined)
-    
+  
     
     combined = Conv2D(128, kernel_size=3, padding='same')(combined) 
     combined = BatchNormalization()(combined)
