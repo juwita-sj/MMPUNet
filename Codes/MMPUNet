@@ -65,7 +65,7 @@ def combine_attention(x):
     combined = Concatenate()([f_act, f_a])
       
    
-    combined = Conv2D(1, kernel_size=1, padding='same', activation='sigmoid')(combined) #ini sudah daku ubah harusnya conv2D(1,)
+    combined = Conv2D(1, kernel_size=1, padding='same', activation='sigmoid')(combined) 
     combined = Multiply()([x, combined])
     
   
