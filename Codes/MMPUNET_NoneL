@@ -58,12 +58,12 @@ def build_model(H, W, C, encoder_trainable=False):
     # Bottleneck feature
     encoder_output = encoder.get_layer("block_13_expand_relu").output
 
-    # (opsional) cek bentuk output tiap skip
+    # (opsional) cek  output every skip
     for name in skip_connection_names:
         layer_output = encoder.get_layer(name).output
         print("Shape of the output for layer", name, ":", layer_output.shape)
 
-    # Filter per stage (dipakai dari belakang)
+    # Filter per stage (backward)
     f = [16, 32, 64, 128]
 
     # Attention di bottleneck
