@@ -1,1 +1,130 @@
+import tensorflow as tf
+from tensorflow.keras.layers import (Input, Conv2D, BatchNormalization, Activation,
+                                     UpSampling2D, Concatenate, Dropout, Multiply)
+from tensorflow.keras.applications import MobileNetV2
+from tensorflow.keras.models import Model
+from tensorflow.keras.utils import plot_model
+
+
+# ------------------------------ ATTENTION ------------------------------ #
+
+def spatial_attention(x):
+    # Average over channels
+    x1 = tf.reduce_mean(x, axis=-1)          # [H, W]
+    x1 = tf.expand_dims(x1, axis=-1)         # [H, W, 1]
+
+    # Max over channels
+    x2 = tf.reduce_max(x, axis=-1)           # [H, W]
+    x2 = tf.expand_dims(x2, axis=-1)         # [H, W, 1]
+
+    # Concatenate and make a spatial mask
+    comb = Concatenate()([x1, x2])           # [H, W, 2]
+    comb = Conv2D(1, kernel_size=3, padding="same", activation="sigmoid")(comb)
+    out  = Multiply()([x, comb])
+    return out
+
+
+def combine_attention(x):
+    # spatial branch
+    f_a = spatial_attention(x)
+    # simple channel-like gate (1x1 conv + sigmoid)
+    f_b = Conv2D(1, (1, 1), padding='same', use_bias=False)(x)
+    f_act = Activation('sigmoid')(f_b)
+
+    # fuse and gate
+    combined = Concatenate()([f_act, f_a])
+    combined = Conv2D(1, kernel_size=1, padding='same', activation='sigmoid')(combined)
+    combined = Multiply()([x, combined])
+    return combined
+
+
+# ------------------------------ MODEL ------------------------------ #
+
+def build_model(H, W, C, encoder_trainable=False):
+    inputs = Input(shape=(H, W, C), name="input_image")
+
+    # Pretrained encoder
+    encoder = MobileNetV2(include_top=False, weights="imagenet", input_tensor=inputs)
+    encoder.trainable = encoder_trainable
+
+    # Skip names (shallow -> deep)
+    skip_connection_names = [
+        "input_image",
+        "block_1_expand_relu",
+        "block_3_expand_relu",
+        "block_6_expand_relu",
+    ]
+
+    # Bottleneck feature
+    encoder_output = encoder.get_layer("block_13_expand_relu").output
+
+    # (opsional) cek bentuk output tiap skip
+    for name in skip_connection_names:
+        layer_output = encoder.get_layer(name).output
+        print("Shape of the output for layer", name, ":", layer_output.shape)
+
+    # Filter per stage (dipakai dari belakang)
+    f = [16, 32, 64, 128]
+
+    # Attention di bottleneck
+    x = combine_attention(encoder_output)
+    encoder.summary()
+    print("Bottleneck after attention:", x.shape)
+
+    # ------------------- Decoder tanpa loop (4 stage) ------------------- #
+    # Stage 1: upsample -> concat skip block_6 -> 2x(Conv-BN-ReLU) @ 128
+    x_skip_1 = encoder.get_layer("block_6_expand_relu").output
+    print("Using skip: block_6_expand_relu", x_skip_1)
+    x = UpSampling2D((2, 2))(x)
+    x = Concatenate()([x, x_skip_1])
+    x = combine_attention(x)
+    x = Dropout(0.2)(x)
+    x = Conv2D(f[-1], (3, 3), padding="same")(x); x = BatchNormalization()(x); x = Activation("relu")(x)
+    x = Conv2D(f[-1], (3, 3), padding="same")(x); x = BatchNormalization()(x); x = Activation("relu")(x)
+
+    # Stage 2: upsample -> concat skip block_3 -> 2x(Conv-BN-ReLU) @ 64
+    x_skip_2 = encoder.get_layer("block_3_expand_relu").output
+    print("Using skip: block_3_expand_relu", x_skip_2)
+    x = UpSampling2D((2, 2))(x)
+    x = Concatenate()([x, x_skip_2])
+    x = combine_attention(x)
+    x = Dropout(0.2)(x)
+    x = Conv2D(f[-2], (3, 3), padding="same")(x); x = BatchNormalization()(x); x = Activation("relu")(x)
+    x = Conv2D(f[-2], (3, 3), padding="same")(x); x = BatchNormalization()(x); x = Activation("relu")(x)
+
+    # Stage 3: upsample -> concat skip block_1 -> 2x(Conv-BN-ReLU) @ 32
+    x_skip_3 = encoder.get_layer("block_1_expand_relu").output
+    print("Using skip: block_1_expand_relu", x_skip_3)
+    x = UpSampling2D((2, 2))(x)
+    x = Concatenate()([x, x_skip_3])
+    x = combine_attention(x)
+    x = Dropout(0.2)(x)
+    x = Conv2D(f[-3], (3, 3), padding="same")(x); x = BatchNormalization()(x); x = Activation("relu")(x)
+    x = Conv2D(f[-3], (3, 3), padding="same")(x); x = BatchNormalization()(x); x = Activation("relu")(x)
+
+    # Stage 4: upsample -> concat skip input_image -> 2x(Conv-BN-ReLU) @ 16
+    x_skip_4 = encoder.get_layer("input_image").output
+    print("Using skip: input_image", x_skip_4)
+    x = UpSampling2D((2, 2))(x)
+    x = Concatenate()([x, x_skip_4])
+    x = combine_attention(x)
+    x = Dropout(0.2)(x)
+    x = Conv2D(f[-4], (3, 3), padding="same")(x); x = BatchNormalization()(x); x = Activation("relu")(x)
+    x = Conv2D(f[-4], (3, 3), padding="same")(x); x = BatchNormalization()(x); x = Activation("relu")(x)
+
+    # Output
+    x = Conv2D(3, (1, 1), padding="same")(x)
+    x = Activation("sigmoid")(x)
+
+    model = Model(inputs, x)
+    return model
+
+
+# ------------------------------ MAIN ------------------------------ #
+
+if __name__ == "__main__":
+    H, W, C = 64, 64, 3
+    model = build_model(H, W, C)
+    model.summary()
+    plot_model(model, to_file='model_plot.png', show_shapes=True, show_layer_names=True)
 
